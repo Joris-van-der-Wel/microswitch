@@ -1,0 +1,112 @@
+# The samples in this example were downloaded from https://freepats.zenvoid.org/ChromaticPercussion/tubular-bells.html
+# A CC0 sample library created by Versilian Studios LLC and assembled by assembled by roberto@zenvoid.org
+
+switches:
+  - title: Random
+    key: 'Q'
+    gamepad:
+      button: Start
+    samples:
+      - file: F#3.flac
+      - file: A#4.flac
+      - file: C4.flac
+      - file: D4.flac
+      - file: E4.flac
+      - file: F#4.flac
+      - file: G#4.flac
+      - file: A#5.flac
+      - file: C5.flac
+      - file: D5.flac
+      - file: E5.flac
+      - file: E6.flac
+
+  - title: F#3
+    key: Grave
+    gamepad:
+      button: South
+    samples:
+      - file: F#3.flac
+
+  - title: A#4
+    key: 1
+    gamepad:
+      button: East
+    samples:
+      - file: A#4.flac
+
+  - title: C4
+    key: 2
+    gamepad:
+      button: North
+    samples:
+      - file: C4.flac
+
+  - title: D4
+    key: 3
+    gamepad:
+      button: West
+    samples:
+      - file: D4.flac
+
+  - title: E4
+    key: 4
+    gamepad:
+      button: LeftTrigger
+    samples:
+      - file: E4.flac
+
+  - title: F#4
+    key: 4
+    gamepad:
+      button: LeftTrigger2
+    samples:
+      - file: F#4.flac
+
+  - title: G#4
+    key: 5
+    gamepad:
+      button: RightTrigger
+    samples:
+      - file: G#4.flac
+
+  - title: A#5
+    key: 6
+    gamepad:
+      button: RightTrigger2
+    samples:
+      - file: A#5.flac
+
+  - title: C5
+    key: 7
+    gamepad:
+      button: DPadUp
+    samples:
+      - file: C5.flac
+
+  - title: D5
+    key: 8
+    gamepad:
+      button: DPadDown
+    samples:
+      - file: D5.flac
+
+  - title: E5
+    key: 9
+    gamepad:
+      button: DPadLeft
+    samples:
+      - file: E5.flac
+
+  - title: E6
+    key: 0
+    gamepad:
+      button: DPadRight
+    samples:
+      - file: E6.flac
+
+  - title: Silence
+    key: Space
+    gamepad:
+      button: Select
+    stopSounds: true
+

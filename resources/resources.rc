@@ -1,0 +1,7 @@
+/*
+ * To compile this file int ore resources.res:
+ * 1. Open the "Developer Command Prompt for VS 2019"
+ * 2. `cd` to this directory
+ * 3. run: `rc /fo resources.lib resources.rc`
+ */
+microswitch ICON "microswitch.ico"
