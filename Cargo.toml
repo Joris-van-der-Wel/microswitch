@@ -2,7 +2,7 @@
 name = "microswitch"
 version = "1.0.0"
 authors = ["Joris van der Wel <joris@jorisvanderwel.com>"]
-description = "TODO"
+description = "μSwitch is a cross-platform application which enables musicians to play sounds using switches. It's designed for people with disabilities to help them practise playing music and to perform in a concert."
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/Joris-van-der-Wel/microswitch"
