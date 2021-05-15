@@ -77,14 +77,24 @@ pub enum GamepadThreadError {
     #[error("GamepadThread: Failed to recv() (sender went away?): {source}")]
     Recv2 { #[from] source: RecvTimeoutError },
 
-    #[error("GamepadThread: Failed to initialize gamepad library: {source}")]
-    Gilrs { #[from] source: gilrs::Error },
+    #[error("GamepadThread: Failed to initialize gamepad library: {message}")]
+    Gilrs { message: String },
 
     #[error("GamepadThread: The thread panicked: {join_error_str}")]
     JoinPanic {
         join_error_str: String,
         join_error: Box<dyn Any + Send + 'static>,
     },
+}
+
+// gilrs does not implement Send (on linux) which we need, so copy the error message only, instead
+// of including it as `source`
+impl From<gilrs::Error> for GamepadThreadError {
+    fn from(error: gilrs::Error) -> Self {
+        GamepadThreadError::Gilrs {
+            message: format!("{}", error),
+        }
+    }
 }
 
 #[derive(Error, Debug)]
