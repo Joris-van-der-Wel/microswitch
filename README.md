@@ -66,6 +66,6 @@ On Windows this would be:
 .\target\release\microswitch.exe example\config.yaml
 ```
 
-If this path is _not_ specified it will look for `config.yaml` in the same directory as the executable.
+If this path is _not_ specified it will look for `config/config.yaml` in the same directory as the executable.
 
 The specified paths to the sound samples are relative to the directory the configuration file is in.

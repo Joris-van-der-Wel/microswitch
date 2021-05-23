@@ -23,6 +23,7 @@ pub fn run(mut args: env::Args) -> Result<(), AppRunError> {
     } else {
         let mut exe_path = std::env::current_exe().unwrap();
         exe_path.pop();
+        exe_path.push("config");
         exe_path.push("config.yaml");
         exe_path
     };
