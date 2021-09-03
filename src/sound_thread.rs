@@ -1,7 +1,7 @@
-use crate::config::Config;
+use crate::config::{Config, SwitchRef};
 use crate::error::{readable_thread_panic_error, SoundThreadError};
-use crate::sound_bank::{SampleLoader, SoundBank};
-use rodio::{OutputStream, Sink, OutputStreamHandle};
+use crate::sound_bank::{SampleLoader, SoundBank, SoundBankState};
+use rodio::{OutputStream};
 use std::fmt::Debug;
 use std::sync::mpsc::{Sender, SendError, Receiver};
 use std::sync::mpsc;
@@ -11,67 +11,63 @@ use std::thread;
 #[derive(Debug)]
 pub enum Operation {
     Stop,
-    PlayBank {
-        index: usize,
+    SwitchPressed {
+        switch_ref: SwitchRef,
     },
 }
 
-struct BankState {
-    sound_bank: SoundBank,
-    sink: Option<Sink>,
-}
-
+/// A single SoundThreadBody instance is created for each spawned sound thread, in order to track
+/// the state of the track.
 struct SoundThreadBody {
     rx: Receiver<Operation>,
-    banks: Vec<BankState>,
+    config: Config,
+    banks: Vec<SoundBankState>,
     // if _sound_output is dropped, sound_output_handle will no longer be usable
     _sound_output: OutputStream,
-    sound_output_handle: OutputStreamHandle,
 }
 
 impl SoundThreadBody {
     fn new (config: Config, rx: Receiver<Operation>) -> Result<Self, SoundThreadError> {
         let mut loader = SampleLoader::new();
-        loader.load_banks(&config.switches)?;
+        loader.load_banks(&config.banks)?;
         let loader = loader;
-        let banks = SoundBank::get_all(&loader, config.switches.clone())
-            .expect("Failed to find sound sample, which should just have been loaded");
 
-        let banks = banks.into_iter().map(|sound_bank| {
-            BankState { sound_bank, sink: None }
-        }).collect();
+        let banks = SoundBank::new_all(&loader, config.banks.clone())
+            .expect("SoundThread: Failed to find sound sample, which should just have been loaded");
 
         // if _sound_output is dropped, sound_output_handle will no longer be usable
         let (_sound_output, sound_output_handle) = OutputStream::try_default()?;
 
-        Ok(SoundThreadBody { rx, banks, _sound_output, sound_output_handle })
+        let banks = SoundBankState::new_all(&sound_output_handle, banks);
+
+        Ok(SoundThreadBody { rx, config, banks, _sound_output })
     }
 
-    fn handle_operation_playbank(&mut self, index: usize,) -> Result<(), SoundThreadError> {
-        if self.banks.get(index).is_none() {
-            return Err(SoundThreadError::InvalidBankIndex);
-        }
+    fn handle_operation_switch_pressed(&mut self, switch_ref: SwitchRef) -> Result<(), SoundThreadError> {
+        let switch_config = self.config.switch(switch_ref);
 
-        let stop_all_sinks = self.banks[index].sound_bank.config.stop_sounds;
-
-        if stop_all_sinks {
-            // drop all sinks to stop all sounds
+        if switch_config.stop_sounds {
             for bank in self.banks.iter_mut() {
-                bank.sink.take();
+                bank.stop();
             }
         }
 
-        let bank = &mut self.banks[index];
-
-        if !stop_all_sinks {
-            // Always drop the sink for the current bank. A dropped sink will stop playing. This prevents the same sound
-            // from overlapping, or being queued up.
-            bank.sink.take();
+        if let Some(play) = &switch_config.play {
+            let bank_sample_ref = play.bank_sample_ref;
+            let bank_state = &mut self.banks[bank_sample_ref.bank.bank_index];
+            bank_state.play(bank_sample_ref.sample)?;
         }
 
-        let sink = Sink::try_new(&self.sound_output_handle)?;
-        bank.sound_bank.play(&sink)?;
-        bank.sink = Some(sink);
+        if let Some(play) = &switch_config.play_random {
+            let bank_state = &mut self.banks[play.bank_ref.bank_index];
+            bank_state.play_random()?;
+        }
+
+        if let Some(play) = &switch_config.play_step {
+            let bank_state = &mut self.banks[play.bank_ref.bank_index];
+            bank_state.play_step(play.steps)?;
+        }
+
         Ok(())
     }
 
@@ -86,9 +82,9 @@ impl SoundThreadBody {
                 Operation::Stop => {
                     return Ok(());
                 }
-                Operation::PlayBank { index } => {
-                    if let Err(err) =  self.handle_operation_playbank(index) {
-                        eprintln!("Failed to play sample: {:?}", err);
+                Operation::SwitchPressed { switch_ref } => {
+                    if let Err(err) =  self.handle_operation_switch_pressed(switch_ref) {
+                        eprintln!("SoundThread: Failed to handle switch press: {:?}", err);
                     }
                 }
             };
@@ -96,6 +92,10 @@ impl SoundThreadBody {
     }
 }
 
+/// The SoundThread takes care of loading audio samples from disk, playing them using rodio and
+/// tracking the play state of banks/samples.
+/// A SoundThread instance is created by the parent process in order to spawn the actual thread and
+/// has methods for communicating with the thread.
 pub struct SoundThread {
     tx: Sender<Operation>,
     handle: JoinHandle<()>,
@@ -112,14 +112,14 @@ impl SoundThread {
             match result {
                 Ok(body) => {
                     startup_tx.send(Ok(()))
-                        .expect("Failed to send SoundThread startup result to parent thread");
+                        .expect("SoundThread: Failed to send startup result to parent thread");
 
                     body.thread_body()
-                        .expect("Error during SoundThreadBody.thread_body()");
+                        .expect("SoundThread: Error during SoundThreadBody.thread_body()");
                 }
                 Err(err) => {
                     startup_tx.send(Err(err))
-                        .expect("Failed to send SoundThread startup result to parent thread");
+                        .expect("SoundThread: Failed to send startup result to parent thread");
                 }
             }
         });
@@ -157,7 +157,7 @@ impl SoundThreadRpc {
         SoundThreadRpc { tx: thread.tx.clone() }
     }
 
-    pub fn play(&self, index: usize) -> Result<(), SendError<Operation>> {
-        self.tx.send(Operation::PlayBank { index })
+    pub fn switch_pressed(&self, switch_ref: SwitchRef) -> Result<(), SendError<Operation>> {
+        self.tx.send(Operation::SwitchPressed { switch_ref })
     }
 }

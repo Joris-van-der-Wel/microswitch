@@ -21,6 +21,12 @@ pub enum ConfigError {
 
     #[error("Unknown gamepad button \"{button}\". Allowed values are: {allowed_values}")]
     UnknownGamepadButton { button: String, allowed_values: String },
+
+    #[error("Bank with id \"{bank}\" has not been defined")]
+    UnknownBankId { bank: String },
+
+    #[error("Sample with id \"{sample}\" has not been defined in bank \"{bank}\"")]
+    UnknownSampleId { bank: String, sample: String },
 }
 
 #[derive(Error, Debug)]
@@ -59,11 +65,8 @@ pub enum SoundThreadError {
         join_error: Box<dyn Any + Send + 'static>,
     },
 
-    #[error("SoundThread: The specified bank index is not valid")]
-    InvalidBankIndex,
-
     #[error("SoundThread: Failed to play the sample")]
-    PlayError { #[from] source: PlayError},
+    PlayError { #[from] source: PlayError },
 }
 
 #[derive(Error, Debug)]

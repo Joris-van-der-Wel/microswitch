@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, SwitchRef};
 use iced::{button, Button, Column, Text, Settings, Error, Element, Align, Length, Container, Application, executor, Clipboard, Command, Subscription};
 use iced_native::{Event, keyboard, window};
 use iced::window::Icon;
@@ -51,9 +51,9 @@ impl MyApplication {
         self.should_exit = true;
     }
 
-    fn play(&self, index: usize) {
-        if let Err(err) = self.sound_thread_rpc.play(index) {
-            eprintln!("Error sending play to SoundThread {}", err);
+    fn switch_pressed(&self, switch_ref: SwitchRef) {
+        if let Err(err) = self.sound_thread_rpc.switch_pressed(switch_ref) {
+            eprintln!("Error sending switch_pressed to SoundThread {}", err);
         }
     }
 }
@@ -98,19 +98,23 @@ impl Application for MyApplication {
     fn update(&mut self, message: Message, _clipboard: &mut Clipboard) -> Command<Self::Message>{
         match message {
             Message::PlayButtonPressed(index) => {
-                self.play(index);
+                // for now a button is created for each SwitchConfig, so we can just use the button
+                // index to look up the SwitchConfig
+                let switch_ref = self.config.switches[index].switch_ref;
+                self.switch_pressed(switch_ref);
             },
             Message::EventOccurred(Event::Window(window::Event::CloseRequested)) => {
                 self.exit();
             },
             Message::EventOccurred(Event::Keyboard(keyboard::Event::KeyPressed { key_code, modifiers: _ })) => {
                 if let Some(switch_config) = self.config.find_switch_for_keyboard_key(key_code) {
-                    let button_state = &mut self.play_buttons[switch_config.index];
+                    let switch_ref = switch_config.switch_ref;
+                    let button_state = &mut self.play_buttons[switch_ref.switch_index];
                     let was_pressed = button_state.pressed;
                     button_state.pressed = true;
 
                     if !was_pressed {
-                        self.play(switch_config.index);
+                        self.switch_pressed(switch_ref);
                     }
                 }
             },
@@ -118,7 +122,7 @@ impl Application for MyApplication {
                 println!("Keyboard release {:?}", key_code);
 
                 if let Some(switch_config) = self.config.find_switch_for_keyboard_key(key_code) {
-                    let button_state = &mut self.play_buttons[switch_config.index];
+                    let button_state = &mut self.play_buttons[switch_config.switch_ref.switch_index];
                     button_state.pressed = false;
                 }
             },

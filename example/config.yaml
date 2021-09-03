@@ -1,112 +1,145 @@
 # The samples in this example were downloaded from https://freepats.zenvoid.org/ChromaticPercussion/tubular-bells.html
-# A CC0 sample library created by Versilian Studios LLC and assembled by assembled by roberto@zenvoid.org
+# A CC0 sample library created by Versilian Studios LLC and assembled by roberto@zenvoid.org
+
+banks:
+  - id: tubular
+    poly: true
+    samples:
+      - { id: "F#3", file: "samples/F#3.flac" }
+      - { id: "A#4", file: "samples/A#4.flac" }
+      - { id: "C4" , file: "samples/C4.flac"  }
+      - { id: "D4" , file: "samples/D4.flac"  }
+      - { id: "E4" , file: "samples/E4.flac"  }
+      - { id: "F#4", file: "samples/F#4.flac" }
+      - { id: "G#4", file: "samples/G#4.flac" }
+      - { id: "A#5", file: "samples/A#5.flac" }
+      - { id: "C5" , file: "samples/C5.flac"  }
+      - { id: "D5" , file: "samples/D5.flac"  }
+      - { id: "E5" , file: "samples/E5.flac"  }
+      - { id: "E6" , file: "samples/E6.flac"  }
 
 switches:
-  - title: Random
-    key: 'Q'
-    gamepad:
-      button: Start
-    samples:
-      - file: samples/F#3.flac
-      - file: samples/A#4.flac
-      - file: samples/C4.flac
-      - file: samples/D4.flac
-      - file: samples/E4.flac
-      - file: samples/F#4.flac
-      - file: samples/G#4.flac
-      - file: samples/A#5.flac
-      - file: samples/C5.flac
-      - file: samples/D5.flac
-      - file: samples/E5.flac
-      - file: samples/E6.flac
-
   - title: F#3
     key: Grave
     gamepad:
       button: South
-    samples:
-      - file: samples/F#3.flac
+    play:
+      bank: tubular
+      sample: F#3
 
   - title: A#4
     key: 1
     gamepad:
       button: East
-    samples:
-      - file: samples/A#4.flac
+    play:
+      bank: tubular
+      sample: A#4
 
   - title: C4
     key: 2
     gamepad:
       button: North
-    samples:
-      - file: samples/C4.flac
+    play:
+      bank: tubular
+      sample: C4
 
   - title: D4
     key: 3
     gamepad:
       button: West
-    samples:
-      - file: samples/D4.flac
+    play:
+      bank: tubular
+      sample: D4
 
   - title: E4
     key: 4
     gamepad:
       button: LeftTrigger
-    samples:
-      - file: samples/E4.flac
+    play:
+      bank: tubular
+      sample: E4
 
   - title: F#4
     key: 4
     gamepad:
       button: LeftTrigger2
-    samples:
-      - file: samples/F#4.flac
+    play:
+      bank: tubular
+      sample: F#4
 
   - title: G#4
     key: 5
     gamepad:
       button: RightTrigger
-    samples:
-      - file: samples/G#4.flac
+    play:
+      bank: tubular
+      sample: G#4
 
   - title: A#5
     key: 6
     gamepad:
       button: RightTrigger2
-    samples:
-      - file: samples/A#5.flac
+    play:
+      bank: tubular
+      sample: A#5
 
   - title: C5
     key: 7
     gamepad:
       button: DPadUp
-    samples:
-      - file: samples/C5.flac
+    play:
+      bank: tubular
+      sample: C5
 
   - title: D5
     key: 8
     gamepad:
       button: DPadDown
-    samples:
-      - file: samples/D5.flac
+    play:
+      bank: tubular
+      sample: D5
 
   - title: E5
     key: 9
     gamepad:
       button: DPadLeft
-    samples:
-      - file: samples/E5.flac
+    play:
+      bank: tubular
+      sample: E5
 
   - title: E6
     key: 0
     gamepad:
       button: DPadRight
-    samples:
-      - file: samples/E6.flac
+    play:
+      bank: tubular
+      sample: E6
+
+  - title: Random
+    key: 'Q'
+    gamepad:
+      button: Start
+    playRandom:
+      bank: tubular
+
+  - title: Previous
+    key: 'Up'
+    gamepad:
+      button: LeftThumb
+    playStep:
+      bank: tubular
+      steps: -1
+
+  - title: Next
+    key: 'Down'
+    gamepad:
+      button: RightThumb
+    playStep:
+      bank: tubular
+      steps: 1
 
   - title: Silence
     key: Space
     gamepad:
       button: Select
     stopSounds: true
-

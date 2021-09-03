@@ -7,7 +7,6 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::{fs, array};
 
-
 const KEYBOARD_BUTTON_MAPPING: [(&str, KeyCode); 136] = [
     ("1", KeyCode::Key1),
     ("2", KeyCode::Key2),
@@ -189,55 +188,243 @@ fn make_valid_gamepad_button_vec() -> Vec<&'static str>{
         .collect()
 }
 
-#[derive(Deserialize, Debug, Clone)]
+// SampleId and BankId are used during config parsing, they are a human readable reference to
+// specific banks/samples. They are translated to BankRef and SampleRef, which enable config structs
+// to quickly look up other config structs by index.
+type SampleId = String;
+type BankId = String;
+
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
+pub struct BankRef {
+    pub bank_index: usize,
+}
+
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
+pub struct SampleRef {
+    pub sample_index: usize,
+}
+
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
+pub struct BankSampleRef {
+    pub bank: BankRef,
+    pub sample: SampleRef,
+}
+
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
+pub struct SwitchRef {
+    pub switch_index: usize,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SampleConfig {
+    pub id: SampleId,
     pub file: PathBuf,
+
+    // Cached //
+
+    #[serde(skip)]
+    pub bank_sample_ref: BankSampleRef,
     #[serde(skip)]
     pub file_resolved: PathBuf,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BankConfig {
+    pub id: BankId,
+    /// If true, do not mute other samples when playing a sample in this bank
+    #[serde(default)]
+    pub poly: bool,
+    #[serde(default)]
+    pub samples: Vec<SampleConfig>,
+
+    // Cached //
+
+    #[serde(skip)]
+    pub bank_ref: BankRef,
+}
+
+impl BankConfig {
+    pub fn sample(&self, sample_ref: SampleRef) -> &SampleConfig {
+        &self.samples[sample_ref.sample_index]
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct Gamepad {
     pub device_id: Option<usize>,
+
+    /// Must match an identifier present in GAMEPAD_BUTTON_MAPPING
     pub button: String,
+
+    // Cached //
+
     #[serde(skip)]
     pub gilrs_button: Button,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchPlay {
+    pub bank: BankId,
+    pub sample: SampleId,
+
+    // Cached //
+
+    #[serde(skip)]
+    pub bank_sample_ref: BankSampleRef,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchPlayRandom {
+    pub bank: BankId,
+
+    // Cached //
+
+    #[serde(skip)]
+    pub bank_ref: BankRef,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchPlayStep {
+    pub bank: BankId,
+    /// How many steps to skip to skip in the bank
+    /// -1 = play the previous one
+    /// 0 = repeat the last played sample
+    /// 1 = play the next one
+    /// 2 = play the next one, skipping a sample
+    /// etc
+
+    pub steps: i32,
+
+    // Cached //
+
+    #[serde(skip)]
+    pub bank_ref: BankRef,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct SwitchConfig {
-    #[serde(skip)]
-    pub index: usize,
+    // Switch trigger conditions //
+
+    /// the title in the gui
     pub title: String,
+    /// trigger based on a keyboard key
     pub key: Option<String>,
+    /// trigger based on a gamepad button
+    pub gamepad: Option<Gamepad>,
+
+    // Actions //
+
+    /// if true, stop all sounds
+    #[serde(default)]
+    pub stop_sounds: bool,
+
+    /// Play a specific sample in a specific bank
+    pub play: Option<SwitchPlay>,
+
+    // Play a random sample in a bank
+    pub play_random: Option<SwitchPlayRandom>,
+
+    // Play a sample, relative in position to the sample previously played in a bank
+    pub play_step: Option<SwitchPlayStep>,
+
+    // Cached //
+
+    #[serde(skip)]
+    pub switch_ref: SwitchRef,
+
+    /// same as `key` but translated to a KeyCode
     #[serde(skip)]
     pub key_code: Option<KeyCode>,
-    pub gamepad: Option<Gamepad>,
-    #[serde(default = "Vec::new")]
-    pub samples: Vec<SampleConfig>,
-    #[serde(default="bool::default")]
-    pub stop_sounds: bool,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+struct ConfigIdLookup {
+    /// bank.id => BankRef
+    bank_id_lookup: HashMap<String, BankRef>,
+
+    /// sample.id => BankRef
+    sample_id_lookup: HashMap<String, HashMap<String, BankSampleRef>>,
+}
+
+impl ConfigIdLookup {
+    fn new(banks: &Vec<BankConfig>) -> Self {
+        let bank_id_lookup = banks
+            .iter()
+            .map(|bank| (bank.id.clone(), bank.bank_ref))
+            .collect();
+
+        let sample_id_lookup = banks
+            .iter()
+            .map(|bank| {
+                let samples = bank.samples
+                    .iter()
+                    .map(|sample| (sample.id.clone(), sample.bank_sample_ref))
+                    .collect();
+
+                (bank.id.clone(), samples)
+            })
+            .collect();
+
+        ConfigIdLookup { bank_id_lookup, sample_id_lookup }
+    }
+
+    fn bank_id_to_ref(&self, bank_id: &str) -> Result<BankRef, ConfigError> {
+        match self.bank_id_lookup.get(bank_id) {
+            Some(bank_ref) => Ok(*bank_ref),
+            None => Err(ConfigError::UnknownBankId {
+                bank: bank_id.to_string(),
+            }),
+        }
+    }
+
+    fn sample_id_to_ref(&self, bank_id: &str, sample_id: &str) -> Result<BankSampleRef, ConfigError> {
+        let result = self.sample_id_lookup
+            .get(bank_id)
+            .map(|map| map.get(sample_id));
+
+        match result {
+            None => Err(ConfigError::UnknownBankId {
+                bank: bank_id.to_string(),
+            }),
+            Some(None) => Err(ConfigError::UnknownSampleId {
+                bank: bank_id.to_string(),
+                sample: sample_id.to_string(),
+            }),
+            Some(Some(bank_sample_ref)) => Ok(*bank_sample_ref),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    pub banks: Vec<BankConfig>,
     pub switches: Vec<SwitchConfig>,
+
+    // Cached //
 
     // The path that all other paths are relative to
     #[serde(skip)]
     pub resolve_path: PathBuf,
 
     #[serde(skip)]
-    keyboard_key_to_switch_lookup_table: HashMap<KeyCode, usize>,
+    // keyboard key code => switch config reference
+    keyboard_key_to_switch_lookup_table: HashMap<KeyCode, SwitchRef>,
 
     #[serde(skip)]
-    gamepad_button_to_switch_lookup_table: HashMap<Option<usize>, HashMap<Button, usize>>,
+    // device id => gamepad button => switch config reference
+    gamepad_button_to_switch_lookup_table: HashMap<Option<usize>, HashMap<Button, SwitchRef>>,
 }
 
 impl Config {
@@ -245,8 +432,8 @@ impl Config {
         let mut config: Config = serde_yaml::from_str(yaml_string)?;
         config.resolve_path = resolve_path;
 
-        config.resolve_switch_index();
-        config.resolve_switch_paths();
+        config.resolve_refs()?;
+        config.resolve_bank_paths();
         config.resolve_gamepad_button_mappings()?;
         config.resolve_keyboard_key_to_switch_lookup_table()?;
         config.resolve_gamepad_button_to_switch_lookup_table();
@@ -263,15 +450,42 @@ impl Config {
         Ok(Config::from_string(&content, resolve_path)?)
     }
 
-    fn resolve_switch_index(&mut self) {
-        for (index, switch_config) in &mut self.switches.iter_mut().enumerate() {
-            switch_config.index = index;
+    fn resolve_refs(&mut self) -> Result<(), ConfigError> {
+        for (bank_index, bank_config) in &mut self.banks.iter_mut().enumerate() {
+            bank_config.bank_ref.bank_index = bank_index;
+
+            for (sample_index, sample_config) in &mut bank_config.samples.iter_mut().enumerate() {
+                sample_config.bank_sample_ref.bank.bank_index = bank_index;
+                sample_config.bank_sample_ref.sample.sample_index = sample_index;
+            }
         }
+
+        for (switch_index, switch_config) in &mut self.switches.iter_mut().enumerate() {
+            switch_config.switch_ref.switch_index = switch_index;
+        }
+
+        let lookup = ConfigIdLookup::new(&self.banks);
+
+        for switch_config in &mut self.switches.iter_mut() {
+            if let Some(play) = &mut switch_config.play.as_mut() {
+                play.bank_sample_ref = lookup.sample_id_to_ref(&play.bank, &play.sample)?;
+            }
+
+            if let Some(play) = &mut switch_config.play_random.as_mut() {
+                play.bank_ref = lookup.bank_id_to_ref(&play.bank)?;
+            }
+
+            if let Some(play) = &mut switch_config.play_step.as_mut() {
+                play.bank_ref = lookup.bank_id_to_ref(&play.bank)?;
+            }
+        }
+
+        Ok(())
     }
 
-    fn resolve_switch_paths(&mut self) {
-        for switch_config in &mut self.switches {
-            for sample in &mut switch_config.samples {
+    fn resolve_bank_paths(&mut self) {
+        for bank_config in &mut self.banks {
+            for sample in &mut bank_config.samples {
                 let mut resolved_file = PathBuf::from(&self.resolve_path);
                 resolved_file.push(&sample.file);
                 sample.file_resolved = resolved_file;
@@ -319,9 +533,9 @@ impl Config {
             }
         }
 
-        for (index, switch_config) in (&self.switches).into_iter().enumerate() {
+        for switch_config in (&self.switches).into_iter() {
             if let Some(key_code) = &switch_config.key_code {
-                lookup_table.insert(*key_code, index);
+                lookup_table.insert(*key_code, switch_config.switch_ref);
             }
         }
 
@@ -332,23 +546,22 @@ impl Config {
     fn resolve_gamepad_button_to_switch_lookup_table(&mut self) {
         let gamepad_configs = (&self.switches)
             .into_iter()
-            .enumerate()
-            .filter_map(|(index, switch_config)| {
+            .filter_map(|switch_config| {
                 match &switch_config.gamepad {
-                    Some(gamepad) => Some((gamepad, index)),
+                    Some(gamepad) => Some((gamepad, switch_config.switch_ref)),
                     None => None,
                 }
             });
 
         let mut lookup_table = HashMap::new();
 
-        for (gamepad_config, switch_index) in gamepad_configs {
+        for (gamepad_config, switch_ref) in gamepad_configs {
             if !lookup_table.contains_key(&gamepad_config.device_id) {
                 lookup_table.insert(gamepad_config.device_id, HashMap::new());
             }
 
             let map = lookup_table.get_mut(&gamepad_config.device_id).unwrap();
-            map.insert(gamepad_config.gilrs_button, switch_index);
+            map.insert(gamepad_config.gilrs_button, switch_ref);
         }
 
         self.gamepad_button_to_switch_lookup_table = lookup_table;
@@ -356,20 +569,20 @@ impl Config {
 
     pub fn find_switch_for_keyboard_key(&self, key: KeyCode) -> Option<&SwitchConfig> {
         match self.keyboard_key_to_switch_lookup_table.get(&key) {
-            Some(index) => Some(&self.switches[*index]),
+            Some(switch_ref) => Some(&self.switches[switch_ref.switch_index]),
             None => None,
         }
     }
 
     pub fn find_switch_for_gamepad_button(&self, device_id: usize, button: Button) -> Option<&SwitchConfig> {
         // first try to find a switch configured for a specific gamepad device
-        let index = match self.gamepad_button_to_switch_lookup_table.get(&Some(device_id)) {
+        let switch_ref = match self.gamepad_button_to_switch_lookup_table.get(&Some(device_id)) {
             Some(map) => map.get(&button),
             None => None,
         };
 
         // Then try to find a switch configured for all gamepad devices
-        let index = match index {
+        let switch_ref = match switch_ref {
             Some(v) => Some(v),
             None => {
                 match self.gamepad_button_to_switch_lookup_table.get(&None) {
@@ -379,122 +592,325 @@ impl Config {
             }
         };
 
-        match index {
-            Some(index) => Some(&self.switches[*index]),
+        match switch_ref {
+            Some(switch_ref) => Some(&self.switches[switch_ref.switch_index]),
             None => None,
         }
+    }
+
+    pub fn switch(&self, switch_ref: SwitchRef) -> &SwitchConfig {
+        // this will crash if switch_ref.switch_index is out of bounds, however the expectation is
+        // that a SwitchRef instance is always valid.
+        &self.switches[switch_ref.switch_index]
+    }
+
+    pub fn bank(&self, bank_ref: BankRef) -> &BankConfig {
+        &self.banks[bank_ref.bank_index]
+    }
+
+    pub fn sample(&self, bank_sample_ref: BankSampleRef) -> (&BankConfig, &SampleConfig) {
+        let bank = self.bank(bank_sample_ref.bank);
+        let sample = bank.sample(bank_sample_ref.sample);
+        (bank, sample)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{Config};
-    use std::path::{Path, PathBuf};
-    use std::collections::HashMap;
+    use crate::config::{Config, BankConfig, BankRef, SampleConfig, SampleRef, BankSampleRef, SwitchConfig, SwitchRef, SwitchPlay, SwitchPlayRandom, SwitchPlayStep, Gamepad};
+    use std::path::{PathBuf};
     use gilrs::Button;
     use iced::keyboard::KeyCode;
+    use pretty_assertions::{assert_eq};
+    use crate::error::ConfigError;
 
-    fn test_path() -> PathBuf { PathBuf::from("/test/path") }
+    fn test_path(extra_parts: &[&str]) -> PathBuf {
+        let path_sep = std::path::MAIN_SEPARATOR.to_string();
+        [path_sep.as_str(), "test", "path"].iter().chain(extra_parts.iter()).collect()
+    }
 
     #[test]
     fn successful_config_parsing() {
         let config_source = r###"
-switches:
-  - title: Foo
-    key: Space
-    gamepad:
-      button: South
+banks:
+  - id: bankA
+    # poly option is false by default
+    poly: true
     samples:
-      - file: foo1.mp3
-      - file: foo2.wav
-      - file: foo3.ogg
-      - file: foo4.flac
+      # Multiple samples
+      - id: foo1
+        file: foo1.mp3
+      - id: foo2
+        file: foo2.wav
+      - id: foo3
+        file: foo3.ogg
+      - id: foo4
+        file: foo4.flac
 
-  - title: Bar
-    key: 1
+  - id: bankB
+    # poly option is not set here
+    samples:
+      # sample with id "foo1" also exists in "bankA". They should not interfere
+      - id: foo1
+        file: foo1-bankB.mp3
+
+switches:
+  - title: play option
+    play:
+      bank: bankB
+      sample: foo1
+
+  - title: playRandom option
+    playRandom:
+      bank: bankB
+
+  - title: playStep option
+    playStep:
+      bank: bankA
+      steps: 1
+
+  - title: stopSounds option
+    stopSounds: true
+
+  - title: Only the required fields
+
+  - title: keyboard key
+    key: X
+
+  - title: gamepad button on any device
+    gamepad:
+      button: North
+
+  - title: gamepad button, specific device
     gamepad:
       deviceId: 123
       button: North
-    stopSounds: true
-    samples:
-      - file: bar.mp3
-
-  - title: without a key / gamepad
-    samples:
-      - file: bar.mp3
-
-  - title: another one
-    gamepad:
-      button: West
-    samples:
-      - file: bar.mp3
-
-  - title: Only the required fields
 "###;
-        let config = Config::from_string(config_source, test_path()).unwrap();
-        assert_eq!(config.switches.len(), 5);
-        assert_eq!(config.switches[0].title, "Foo");
-        assert_eq!(config.switches[0].key, Some(String::from("Space")));
-        assert_eq!(config.switches[0].key_code, Some(KeyCode::Space));
-        assert_eq!(config.switches[0].samples.len(), 4);
-        assert_eq!(config.switches[0].samples[0].file, PathBuf::from("foo1.mp3"));
-        assert_eq!(config.switches[0].samples[0].file_resolved, PathBuf::from("/test/path/foo1.mp3"));
-        assert_eq!(config.switches[0].samples[0].file, PathBuf::from("foo1.mp3"));
-        assert_eq!(config.switches[0].samples[3].file_resolved, PathBuf::from("/test/path/foo4.flac"));
-        assert_eq!(config.switches[0].stop_sounds, false);
+        let config = Config::from_string(config_source, test_path(&[])).unwrap();
+        assert_eq!(config, Config {
+            banks: vec![
+                BankConfig {
+                    id: "bankA".to_string(),
+                    poly: true,
+                    samples: vec![
+                        SampleConfig {
+                            id: "foo1".to_string(),
+                            file: PathBuf::from("foo1.mp3"),
+                            bank_sample_ref: BankSampleRef {
+                                bank: BankRef { bank_index: 0 },
+                                sample: SampleRef { sample_index: 0 },
+                            },
+                            file_resolved: test_path(&["foo1.mp3"]),
+                        },
+                        SampleConfig {
+                            id: "foo2".to_string(),
+                            file: PathBuf::from("foo2.wav"),
+                            bank_sample_ref: BankSampleRef {
+                                bank: BankRef { bank_index: 0 },
+                                sample: SampleRef { sample_index: 1 },
+                            },
+                            file_resolved: test_path(&["foo2.wav"]),
+                        },
+                        SampleConfig {
+                            id: "foo3".to_string(),
+                            file: PathBuf::from("foo3.ogg"),
+                            bank_sample_ref: BankSampleRef {
+                                bank: BankRef { bank_index: 0 },
+                                sample: SampleRef { sample_index: 2 },
+                            },
+                            file_resolved: test_path(&["foo3.ogg"]),
+                        },
+                        SampleConfig {
+                            id: "foo4".to_string(),
+                            file: PathBuf::from("foo4.flac"),
+                            bank_sample_ref: BankSampleRef {
+                                bank: BankRef { bank_index: 0 },
+                                sample: SampleRef { sample_index: 3 },
+                            },
+                            file_resolved: test_path(&["foo4.flac"])
+                        },
+                    ],
+                    bank_ref: BankRef { bank_index: 0 },
+                },
+                BankConfig {
+                    id: "bankB".to_string(),
+                    poly: false,
+                    samples: vec![
+                        SampleConfig {
+                            id: "foo1".to_string(),
+                            file: PathBuf::from("foo1-bankB.mp3"),
+                            bank_sample_ref: BankSampleRef {
+                                bank: BankRef { bank_index: 1 },
+                                sample: SampleRef { sample_index: 0 },
+                            },
+                            file_resolved: test_path(&["foo1-bankB.mp3"])
+                        },
+                    ],
+                    bank_ref: BankRef { bank_index: 1 },
+                },
+            ],
+            switches: vec![
+                SwitchConfig {
+                    title: "play option".to_string(),
+                    key: None,
+                    gamepad: None,
+                    stop_sounds: false,
+                    play: Some(SwitchPlay {
+                        bank: "bankB".to_string(),
+                        sample: "foo1".to_string(),
+                        bank_sample_ref: BankSampleRef {
+                            bank: BankRef { bank_index: 1 },
+                            sample: SampleRef { sample_index: 0 },
+                        }
+                    }),
+                    play_random: None,
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 0 },
+                    key_code: None
+                },
+                SwitchConfig {
+                    title: "playRandom option".to_string(),
+                    key: None,
+                    gamepad: None,
+                    stop_sounds: false,
+                    play: None,
+                    play_random: Some(
+                        SwitchPlayRandom {
+                            bank: "bankB".to_string(),
+                            bank_ref: BankRef { bank_index: 1 },
+                        },
+                    ),
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 1 },
+                    key_code: None,
+                },
+                SwitchConfig {
+                    title: "playStep option".to_string(),
+                    key: None,
+                    gamepad: None,
+                    stop_sounds: false,
+                    play: None,
+                    play_random: None,
+                    play_step: Some(
+                        SwitchPlayStep {
+                            bank: "bankA".to_string(),
+                            steps: 1,
+                            bank_ref: BankRef { bank_index: 0 },
+                        },
+                    ),
+                    switch_ref: SwitchRef { switch_index: 2 },
+                    key_code: None,
+                },
+                SwitchConfig {
+                    title: "stopSounds option".to_string(),
+                    key: None,
+                    gamepad: None,
+                    stop_sounds: true,
+                    play: None,
+                    play_random: None,
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 3 },
+                    key_code: None,
+                },
+                SwitchConfig {
+                    title: "Only the required fields".to_string(),
+                    key: None,
+                    gamepad: None,
+                    stop_sounds: false,
+                    play: None,
+                    play_random: None,
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 4 },
+                    key_code: None,
+                },
+                SwitchConfig {
+                    title: "keyboard key".to_string(),
+                    key: Some("X".to_string()),
+                    gamepad: None,
+                    stop_sounds: false,
+                    play: None,
+                    play_random: None,
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 5 },
+                    key_code: Some(KeyCode::X),
+                },
+                SwitchConfig {
+                    title: "gamepad button on any device".to_string(),
+                    key: None,
+                    gamepad: Some(
+                        Gamepad {
+                            device_id: None,
+                            button: "North".to_string(),
+                            gilrs_button: Button::North,
+                        },
+                    ),
+                    stop_sounds: false,
+                    play: None,
+                    play_random: None,
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 6 },
+                    key_code: None,
+                },
+                SwitchConfig {
+                    title: "gamepad button, specific device".to_string(),
+                    key: None,
+                    gamepad: Some(
+                        Gamepad {
+                            device_id: Some(123),
+                            button: "North".to_string(),
+                            gilrs_button: Button::North,
+                        },
+                    ),
+                    stop_sounds: false,
+                    play: None,
+                    play_random: None,
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 7 },
+                    key_code: None,
+                },
+            ],
+            resolve_path: test_path(&[]),
 
-        assert_eq!(config.switches[1].title, "Bar");
-        assert_eq!(config.switches[1].key, Some(String::from("1")));
-        assert_eq!(config.switches[1].key_code, Some(KeyCode::Key1));
-        assert_eq!(config.switches[1].samples.len(), 1);
-        assert_eq!(config.switches[1].stop_sounds, true);
+            keyboard_key_to_switch_lookup_table: vec![
+                (KeyCode::X, SwitchRef { switch_index: 5 }),
+            ].into_iter().collect(),
 
-        assert_eq!(config.switches[2].key, None);
-
-        {
-            let mut expected: HashMap<KeyCode, usize> = HashMap::new();
-            expected.insert(KeyCode::Space, 0);
-            expected.insert(KeyCode::Key1, 1);
-            assert_eq!(config.keyboard_key_to_switch_lookup_table, expected);
-        }
-
-        {
-            let mut expected: HashMap<Option<usize>, HashMap<Button, usize>> = HashMap::new();
-            let mut device_none = HashMap::new();
-            device_none.insert(Button::South, 0);
-            device_none.insert(Button::West, 3);
-            expected.insert(None, device_none);
-
-            let mut device_123 = HashMap::new();
-            device_123.insert(Button::North, 1);
-            expected.insert(Some(123), device_123);
-
-            assert_eq!(config.gamepad_button_to_switch_lookup_table, expected);
-        }
+            gamepad_button_to_switch_lookup_table: vec![
+                (
+                    None,
+                    vec![
+                        (Button::North, SwitchRef { switch_index: 6 }),
+                    ].into_iter().collect(),
+                ),
+                (
+                    Some(123),
+                    vec![
+                        (Button::North, SwitchRef { switch_index: 7 }),
+                    ].into_iter().collect(),
+                ),
+            ].into_iter().collect(),
+        });
     }
 
     #[test]
     fn find_switch_for_keyboard_key() {
         let config_source = r###"
+banks: []
 switches:
   - title: Key a
     key: A
-    samples: []
 
   # should override the first switch
   - title: Key a (again)
     key: A
-    samples: []
 
   - title: Key b
     key: B
-    samples: []
 
   - title: No key
-    samples: []
 "###;
 
-        let config = Config::from_string(config_source, test_path()).unwrap();
+        let config = Config::from_string(config_source, test_path(&[])).unwrap();
         assert!(config.find_switch_for_keyboard_key(KeyCode::Z).is_none());
         assert_eq!(config.find_switch_for_keyboard_key(KeyCode::A).unwrap().title, "Key a (again)");
         assert_eq!(config.find_switch_for_keyboard_key(KeyCode::B).unwrap().title, "Key b");
@@ -503,38 +919,34 @@ switches:
     #[test]
     fn find_switch_for_gamepad_button() {
         let config_source = r###"
+banks: []
 switches:
   - title: South, no device filter
     gamepad:
       button: South
-    samples: []
 
   # should override the first switch
   - title: South, no device filter (again)
     gamepad:
       button: South
-    samples: []
 
   - title: North, device 123
     gamepad:
       deviceId: 123
       button: North
-    samples: []
 
   # Should have less priority because it specifies no device
   - title: North, no device filter
     gamepad:
       button: North
-    samples: []
 
   # The only entry that specifies West
   - title: West, device 123
     gamepad:
       deviceId: 123
       button: West
-    samples: []
 "###;
-        let config = Config::from_string(config_source, test_path()).unwrap();
+        let config = Config::from_string(config_source, test_path(&[])).unwrap();
 
         assert!(config.find_switch_for_gamepad_button(10, Button::West).is_none());
         assert_eq!(config.find_switch_for_gamepad_button(123, Button::West).unwrap().title, "West, device 123");
@@ -551,18 +963,64 @@ switches:
     #[test]
     fn config_with_yaml_syntax_error() {
         let config_source = "bla'[ ";
-        Config::from_string(config_source, test_path()).unwrap_err();
+        Config::from_string(config_source, test_path(&[])).unwrap_err();
     }
 
     #[test]
     fn config_with_mismatched_type() {
         let config_source = r###"
-switches:
-  - title: Foo
-    samples: this should be an array
+switches: this should be an array
 "###;
-        let error = Config::from_string(config_source, test_path()).unwrap_err();
+        let error = Config::from_string(config_source, test_path(&[])).unwrap_err();
         let error_message = format!("{}", error);
         assert!(error_message.contains("invalid type: string"));
+    }
+
+    #[test]
+    fn config_with_invalid_bank_id() {
+        let config_source = r###"
+banks:
+  - id: mybank
+switches:
+  - title: invalid bank id
+    playRandom:
+      bank: invalid
+"###;
+        let error = Config::from_string(config_source, test_path(&[])).unwrap_err();
+        match error {
+            ConfigError::UnknownBankId { bank } => {
+                assert_eq!(bank.as_str(), "invalid");
+            }
+            _ => {
+                panic!("Expected error to be ConfigError::UnknownBankId");
+            }
+        }
+    }
+
+    #[test]
+    fn config_with_invalid_sample_id() {
+        let config_source = r###"
+banks:
+  - id: mybank
+    samples:
+      - id: mysample
+        file: foo.mp3
+
+switches:
+  - title: invalid bank id
+    play:
+      bank: mybank
+      sample: invalid
+"###;
+        let error = Config::from_string(config_source, test_path(&[])).unwrap_err();
+        match error {
+            ConfigError::UnknownSampleId { bank, sample } => {
+                assert_eq!(bank.as_str(), "mybank");
+                assert_eq!(sample.as_str(), "invalid");
+            }
+            _ => {
+                panic!("Expected error to be ConfigError::UnknownSampleId");
+            }
+        }
     }
 }

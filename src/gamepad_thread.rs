@@ -42,7 +42,7 @@ impl GamepadThreadBody {
         let switch_config = self.config.find_switch_for_gamepad_button(device_id, button);
 
         if let Some(switch_config) = switch_config {
-            if let Err(err) = self.sound_thread_rpc.play(switch_config.index) {
+            if let Err(err) = self.sound_thread_rpc.switch_pressed(switch_config.switch_ref) {
                 eprintln!("Error sending play to sound thread {}", err);
                 return Err(GamepadThreadError::SendSoundThread);
             }
