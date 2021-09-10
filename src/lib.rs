@@ -35,11 +35,11 @@ pub fn run(mut args: env::Args) -> Result<(), AppRunError> {
     let config = Config::from_file(config_path)?;
     println!("Relative path for sample files is {}", config.resolve_path.to_str().unwrap());
 
-    let sound_thread = SoundThread::new(&config)?;
+    let (sound_thread, sound_thread_event_receiver) = SoundThread::new(&config)?;
     let gamepad_thread = GamepadThread::new(&config, SoundThreadRpc::new(&sound_thread))?;
 
     // this function will call process::exit() unless there was a startup error
-    run_application(&config, sound_thread, gamepad_thread)?;
+    run_application(&config, sound_thread, gamepad_thread, sound_thread_event_receiver)?;
 
     panic!("This should have been unreachable");
 }

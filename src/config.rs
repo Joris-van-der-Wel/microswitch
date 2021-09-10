@@ -194,23 +194,23 @@ fn make_valid_gamepad_button_vec() -> Vec<&'static str>{
 type SampleId = String;
 type BankId = String;
 
-#[derive(Debug, Copy, Clone, Default, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct BankRef {
     pub bank_index: usize,
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct SampleRef {
     pub sample_index: usize,
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct BankSampleRef {
     pub bank: BankRef,
     pub sample: SampleRef,
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct SwitchRef {
     pub switch_index: usize,
 }
@@ -425,6 +425,13 @@ pub struct Config {
     #[serde(skip)]
     // device id => gamepad button => switch config reference
     gamepad_button_to_switch_lookup_table: HashMap<Option<usize>, HashMap<Button, SwitchRef>>,
+
+    #[serde(skip)]
+    // for each switch that has a SwitchConfig.play (SwitchPlay) configuration, map the sample that it specifies to the switch
+    sample_to_switch_play: HashMap<BankSampleRef, Vec<SwitchRef>>,
+
+    #[serde(skip)]
+    empty_switch_ref_vec: Vec<SwitchRef>, // serde will init this to Default::default() which will be an empty vec
 }
 
 impl Config {
@@ -437,6 +444,7 @@ impl Config {
         config.resolve_gamepad_button_mappings()?;
         config.resolve_keyboard_key_to_switch_lookup_table()?;
         config.resolve_gamepad_button_to_switch_lookup_table();
+        config.resolve_sample_to_switch_play_lookup_table();
 
         Ok(config)
     }
@@ -567,6 +575,19 @@ impl Config {
         self.gamepad_button_to_switch_lookup_table = lookup_table;
     }
 
+    fn resolve_sample_to_switch_play_lookup_table(&mut self) {
+        let mut lookup_table = HashMap::new();
+
+        for switch in &self.switches {
+            if let Some(play) = &switch.play {
+                let list = lookup_table.entry(play.bank_sample_ref).or_insert_with(|| Vec::new());
+                list.push(switch.switch_ref);
+            }
+        }
+
+        self.sample_to_switch_play = lookup_table;
+    }
+
     pub fn find_switch_for_keyboard_key(&self, key: KeyCode) -> Option<&SwitchConfig> {
         match self.keyboard_key_to_switch_lookup_table.get(&key) {
             Some(switch_ref) => Some(&self.switches[switch_ref.switch_index]),
@@ -595,6 +616,15 @@ impl Config {
         match switch_ref {
             Some(switch_ref) => Some(&self.switches[switch_ref.switch_index]),
             None => None,
+        }
+    }
+
+    pub fn find_switch_play_for_sample(&self, bank_sample_ref: BankSampleRef) -> &Vec<SwitchRef> {
+        if let Some(list) = self.sample_to_switch_play.get(&bank_sample_ref) {
+            list
+        }
+        else {
+            &self.empty_switch_ref_vec
         }
     }
 
@@ -685,6 +715,11 @@ switches:
     gamepad:
       deviceId: 123
       button: North
+
+  - title: another play option, same actions as the first
+    play:
+      bank: bankB
+      sample: foo1
 "###;
         let config = Config::from_string(config_source, test_path(&[])).unwrap();
         assert_eq!(config, Config {
@@ -868,6 +903,24 @@ switches:
                     switch_ref: SwitchRef { switch_index: 7 },
                     key_code: None,
                 },
+                SwitchConfig {
+                    title: "another play option, same actions as the first".to_string(),
+                    key: None,
+                    gamepad: None,
+                    stop_sounds: false,
+                    play: Some(SwitchPlay {
+                        bank: "bankB".to_string(),
+                        sample: "foo1".to_string(),
+                        bank_sample_ref: BankSampleRef {
+                            bank: BankRef { bank_index: 1 },
+                            sample: SampleRef { sample_index: 0 },
+                        }
+                    }),
+                    play_random: None,
+                    play_step: None,
+                    switch_ref: SwitchRef { switch_index: 8 },
+                    key_code: None
+                },
             ],
             resolve_path: test_path(&[]),
 
@@ -889,6 +942,20 @@ switches:
                     ].into_iter().collect(),
                 ),
             ].into_iter().collect(),
+
+            sample_to_switch_play: vec![
+                (
+                    BankSampleRef {
+                        bank: BankRef { bank_index: 1 },
+                        sample: SampleRef { sample_index: 0 },
+                    },
+                    vec![
+                        SwitchRef { switch_index: 0 },
+                        SwitchRef { switch_index: 8 },
+                    ],
+                )
+            ].into_iter().collect(),
+            empty_switch_ref_vec: vec![],
         });
     }
 

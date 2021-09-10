@@ -9,7 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 #[derive(Debug)]
-pub enum Operation {
+enum GamepadOperation {
     Stop,
 }
 
@@ -17,13 +17,13 @@ struct GamepadThreadBody {
     config: Config,
     sound_thread_rpc: SoundThreadRpc,
     gilrs: Gilrs,
-    rx: Receiver<Operation>,
+    operation_receiver: Receiver<GamepadOperation>,
 }
 
 impl GamepadThreadBody {
-    fn new(config: Config, sound_thread_rpc: SoundThreadRpc, rx: Receiver<Operation>) -> Result<Self, GamepadThreadError> {
+    fn new(config: Config, sound_thread_rpc: SoundThreadRpc, operation_receiver: Receiver<GamepadOperation>) -> Result<Self, GamepadThreadError> {
         let gilrs = Gilrs::new()?;
-        let body = GamepadThreadBody { config, sound_thread_rpc, gilrs, rx };
+        let body = Self { config, sound_thread_rpc, gilrs, operation_receiver };
         body.print_devices();
         Ok(body)
     }
@@ -42,8 +42,10 @@ impl GamepadThreadBody {
         let switch_config = self.config.find_switch_for_gamepad_button(device_id, button);
 
         if let Some(switch_config) = switch_config {
-            if let Err(err) = self.sound_thread_rpc.switch_pressed(switch_config.switch_ref) {
-                eprintln!("Error sending play to sound thread {}", err);
+            let switch_ref = switch_config.switch_ref;
+
+            if let Err(err) = self.sound_thread_rpc.switch_pressed(switch_ref) {
+                eprintln!("Error sending switch_pressed {:?} to sound thread {}", switch_ref, err);
                 return Err(GamepadThreadError::SendSoundThread);
             }
         }
@@ -66,10 +68,10 @@ impl GamepadThreadBody {
                 }
             }
 
-            match self.rx.recv_timeout(sleep_duration) {
+            match self.operation_receiver.recv_timeout(sleep_duration) {
                 Ok(received) => {
                     match received {
-                        Operation::Stop => {
+                        GamepadOperation::Stop => {
                             return Ok(());
                         }
                     }
@@ -86,39 +88,43 @@ impl GamepadThreadBody {
 }
 
 pub struct GamepadThread {
-    tx: Sender<Operation>,
+    operation_sender: Sender<GamepadOperation>,
     handle: JoinHandle<()>,
 }
 
 impl GamepadThread {
-    pub fn new(config: &Config, sound_thread_rpc: SoundThreadRpc) -> Result<Self, GamepadThreadError> {
+    pub fn new(
+        config: &Config,
+        sound_thread_rpc: SoundThreadRpc,
+    ) -> Result<Self, GamepadThreadError> {
         let config = config.clone();
-        let (tx, rx) = mpsc::channel();
-        let (startup_tx, startup_rx) = mpsc::channel();
+        let (operation_sender, operation_receiver) = mpsc::channel();
+        let (startup_sender, startup_receiver) = mpsc::channel();
 
         let handle = thread::spawn(move || {
-            let result = GamepadThreadBody::new(config, sound_thread_rpc, rx);
+            let result = GamepadThreadBody::new(config, sound_thread_rpc, operation_receiver);
             match result {
                 Ok(body) => {
-                    startup_tx.send(Ok(()))
+                    startup_sender.send(Ok(()))
                         .expect("Failed to send GamepadThread startup result to parent thread");
 
                     body.thread_body()
                         .expect("Error during GamepadThreadBody.thread_body()");
                 }
                 Err(err) => {
-                    startup_tx.send(Err(err))
+                    startup_sender.send(Err(err))
                         .expect("Failed to send GamepadThread startup result to parent thread");
                 }
             }
         });
 
-        startup_rx.recv()??;
-        Ok(GamepadThread { tx, handle })
+        startup_receiver.recv()??;
+        let gamepad_thread = Self { operation_sender, handle };
+        Ok(gamepad_thread)
     }
 
     pub fn stop(self) -> Result<(), GamepadThreadError> {
-        if let Err(err) = self.tx.send(Operation::Stop) {
+        if let Err(err) = self.operation_sender.send(GamepadOperation::Stop) {
             eprintln!("Failed to send stop operation to SoundThread: {}", err);
             // Still try to join in this case, this will probably give us more error details
         }

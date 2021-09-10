@@ -2,11 +2,12 @@ use rodio::{StreamError, PlayError};
 use rodio::decoder::DecoderError;
 use std::any::Any;
 use std::io;
-use std::sync::mpsc::{RecvError, RecvTimeoutError};
+use std::sync::mpsc::{RecvError, SendError, RecvTimeoutError};
 use thiserror::Error;
 use msgbox::IconType;
 use std::path::PathBuf;
 use std::fmt::{Debug, Display};
+use crate::sound_thread::SoundThreadEvent;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -56,8 +57,11 @@ pub enum SoundThreadError {
     #[error("SoundThread: Failed to open sound stream: {source}")]
     OpenSoundStream { #[from] source: StreamError },
 
-    #[error("SoundThread: Failed to recv() (sender went away?): {source}")]
+    #[error("SoundThread: Failed to recv() from channel (sender went away?): {source}")]
     Recv { #[from] source: RecvError },
+
+    #[error("SoundThread: Failed to send() SoundThreadEvent to channel: {source}")]
+    SendEvent { #[from] source: SendError<SoundThreadEvent> },
 
     #[error("SoundThread: The thread panicked: {join_error_str}")]
     JoinPanic {

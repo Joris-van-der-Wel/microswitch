@@ -1,4 +1,4 @@
-use crate::config::{BankConfig, SampleConfig, SampleRef};
+use crate::config::{BankConfig, SampleConfig, SampleRef, BankSampleRef};
 use crate::error::{SampleNotFoundError, SampleLoadError};
 use rand::{thread_rng, Rng};
 use rodio::source::{Buffered, SamplesConverter};
@@ -244,7 +244,7 @@ impl SoundBankState {
         }
     }
 
-    pub fn play(&mut self, sample_ref: SampleRef) -> Result<(), PlayError> {
+    pub fn play(&mut self, sample_ref: SampleRef) -> Result<BankSampleRef, PlayError> {
         self.stop_if_not_poly();
         self.last_played = Some(sample_ref);
         let sample = self.sound_bank.get_sample(sample_ref);
@@ -258,22 +258,25 @@ impl SoundBankState {
         println!("Playing from bank \"{}\", the sample \"{}\"", bank_config.id.as_str(), sample_config.id.as_str());
 
         sample.play(sink);
-        Ok(())
+        Ok(BankSampleRef {
+            bank: self.sound_bank.config.bank_ref,
+            sample: sample_ref,
+        })
     }
 
-    pub fn play_random(&mut self) -> Result<(), PlayError> {
+    pub fn play_random(&mut self) -> Result<Option<BankSampleRef>, PlayError> {
         match self.pick_random_sample() {
-            None => Ok(()),
-            Some(sample_ref) => self.play(sample_ref),
+            None => Ok(None),
+            Some(sample_ref) => Ok(Some(self.play(sample_ref)?)),
         }
     }
 
-    pub fn play_step(&mut self, steps: i32)  -> Result<(), PlayError> {
-        if let Some(sample) = apply_steps(self.sound_bank.sample_count(), self.last_played, steps) {
-            self.play(sample)
+    pub fn play_step(&mut self, steps: i32)  -> Result<Option<BankSampleRef>, PlayError> {
+        if let Some(sample_ref) = apply_steps(self.sound_bank.sample_count(), self.last_played, steps) {
+            Ok(Some(self.play(sample_ref)?))
         }
         else {
-            Ok(())
+            Ok(None)
         }
     }
 }
