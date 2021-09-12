@@ -1,12 +1,13 @@
-use crate::config::{Config, SwitchRef, BankSampleRef};
-use crate::error::{readable_thread_panic_error, SoundThreadError};
-use crate::sound_bank::{SampleLoader, SoundBank, SoundBankState};
-use rodio::{OutputStream};
 use std::fmt::Debug;
-use std::sync::mpsc::{Sender, SendError, Receiver};
+use std::sync::mpsc::{Receiver, Sender, SendError};
 use std::sync::mpsc;
-use std::thread::JoinHandle;
 use std::thread;
+use std::thread::JoinHandle;
+use rodio::OutputStream;
+use crate::config::{BankSampleRef, Config, SwitchRef};
+use crate::error::{readable_thread_panic_error, SoundThreadError};
+use crate::sample_loader::{SampleLoader};
+use crate::sound_bank::{SoundBank, SoundBankState};
 
 #[derive(Debug)]
 pub enum Operation {
@@ -33,12 +34,16 @@ struct SoundThreadBody {
 }
 
 impl SoundThreadBody {
-    fn new (config: Config, operation_receiver: Receiver<Operation>, event_sender: Sender<SoundThreadEvent>) -> Result<Self, SoundThreadError> {
-        let mut loader = SampleLoader::new();
+    fn new (
+        config: Config,
+        sample_loader: Box<dyn SampleLoader>,
+        operation_receiver: Receiver<Operation>,
+        event_sender: Sender<SoundThreadEvent>,
+    ) -> Result<Self, SoundThreadError> {
+        let mut loader = sample_loader;
         loader.load_banks(&config.banks)?;
-        let loader = loader;
 
-        let banks = SoundBank::new_all(&loader, config.banks.clone())
+        let banks = SoundBank::new_all(&*loader, config.banks.clone())
             .expect("SoundThread: Failed to find sound sample, which should just have been loaded");
 
         // if _sound_output is dropped, sound_output_handle will no longer be usable
@@ -114,14 +119,14 @@ pub struct SoundThread {
 }
 
 impl SoundThread {
-    pub fn new(config: &Config) -> Result<(Self, Receiver<SoundThreadEvent>), SoundThreadError> {
+    pub fn new(config: &Config, sample_loader: Box<dyn SampleLoader + Send>) -> Result<(Self, Receiver<SoundThreadEvent>), SoundThreadError> {
         let config = config.clone();
         let (operation_sender, operation_receiver) = mpsc::channel();
         let (startup_sender, startup_receiver) = mpsc::channel();
         let (event_sender, event_receiver) = mpsc::channel();
 
         let handle = thread::spawn(move || {
-            let result = SoundThreadBody::new(config, operation_receiver, event_sender);
+            let result = SoundThreadBody::new(config, sample_loader, operation_receiver, event_sender);
             match result {
                 Ok(body) => {
                     startup_sender.send(Ok(()))

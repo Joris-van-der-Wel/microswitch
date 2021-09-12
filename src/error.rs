@@ -38,10 +38,14 @@ pub enum SampleLoadError {
         source: io::Error,
     },
 
-    #[error("Failed to decode sample ({path}): {source}")]
+    #[error("Failed to decode sample: {source}")]
     Decode {
-        path: PathBuf,
         source: DecoderError,
+    },
+
+    #[error("An embedded sample is missing ({path})")]
+    EmbeddedSampleMissing {
+        path: PathBuf,
     },
 }
 

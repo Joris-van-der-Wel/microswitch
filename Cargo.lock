@@ -2104,6 +2104,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "winapi 0.3.9",
+ "yaml-rust",
 ]
 
 [[package]]

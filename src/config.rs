@@ -225,8 +225,10 @@ pub struct SampleConfig {
 
     #[serde(skip)]
     pub bank_sample_ref: BankSampleRef,
+
+    /// None if the config was embedded, Some if the config is from disk
     #[serde(skip)]
-    pub file_resolved: PathBuf,
+    pub file_resolved: Option<PathBuf>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq)]
@@ -414,9 +416,10 @@ pub struct Config {
 
     // Cached //
 
-    // The path that all other paths are relative to
+    /// The path that all other paths are relative to
+    /// None if the config was embedded, Some if the config is from disk
     #[serde(skip)]
-    pub resolve_path: PathBuf,
+    pub resolve_path: Option<PathBuf>,
 
     #[serde(skip)]
     // keyboard key code => switch config reference
@@ -435,7 +438,7 @@ pub struct Config {
 }
 
 impl Config {
-    fn from_string(yaml_string: &str, resolve_path: PathBuf) -> Result<Config, ConfigError> {
+    pub fn from_string(yaml_string: &str, resolve_path: Option<PathBuf>) -> Result<Config, ConfigError> {
         let mut config: Config = serde_yaml::from_str(yaml_string)?;
         config.resolve_path = resolve_path;
 
@@ -455,7 +458,7 @@ impl Config {
         // all paths defined in the config file, are relative to the directory the config file is in
         let mut resolve_path = path.to_path_buf();
         resolve_path.pop();
-        Ok(Config::from_string(&content, resolve_path)?)
+        Ok(Config::from_string(&content, Some(resolve_path))?)
     }
 
     fn resolve_refs(&mut self) -> Result<(), ConfigError> {
@@ -492,11 +495,17 @@ impl Config {
     }
 
     fn resolve_bank_paths(&mut self) {
+        let resolve_path = &self.resolve_path;
+        if resolve_path.is_none() {
+            return;
+        }
+        let resolve_path = resolve_path.as_ref().unwrap();
+
         for bank_config in &mut self.banks {
             for sample in &mut bank_config.samples {
-                let mut resolved_file = PathBuf::from(&self.resolve_path);
+                let mut resolved_file = PathBuf::from(resolve_path);
                 resolved_file.push(&sample.file);
-                sample.file_resolved = resolved_file;
+                sample.file_resolved = Some(resolved_file);
             }
         }
     }
@@ -721,7 +730,7 @@ switches:
       bank: bankB
       sample: foo1
 "###;
-        let config = Config::from_string(config_source, test_path(&[])).unwrap();
+        let config = Config::from_string(config_source, Some(test_path(&[]))).unwrap();
         assert_eq!(config, Config {
             banks: vec![
                 BankConfig {
@@ -735,7 +744,7 @@ switches:
                                 bank: BankRef { bank_index: 0 },
                                 sample: SampleRef { sample_index: 0 },
                             },
-                            file_resolved: test_path(&["foo1.mp3"]),
+                            file_resolved: Some(test_path(&["foo1.mp3"])),
                         },
                         SampleConfig {
                             id: "foo2".to_string(),
@@ -744,7 +753,7 @@ switches:
                                 bank: BankRef { bank_index: 0 },
                                 sample: SampleRef { sample_index: 1 },
                             },
-                            file_resolved: test_path(&["foo2.wav"]),
+                            file_resolved: Some(test_path(&["foo2.wav"])),
                         },
                         SampleConfig {
                             id: "foo3".to_string(),
@@ -753,7 +762,7 @@ switches:
                                 bank: BankRef { bank_index: 0 },
                                 sample: SampleRef { sample_index: 2 },
                             },
-                            file_resolved: test_path(&["foo3.ogg"]),
+                            file_resolved: Some(test_path(&["foo3.ogg"])),
                         },
                         SampleConfig {
                             id: "foo4".to_string(),
@@ -762,7 +771,7 @@ switches:
                                 bank: BankRef { bank_index: 0 },
                                 sample: SampleRef { sample_index: 3 },
                             },
-                            file_resolved: test_path(&["foo4.flac"])
+                            file_resolved: Some(test_path(&["foo4.flac"])),
                         },
                     ],
                     bank_ref: BankRef { bank_index: 0 },
@@ -778,7 +787,7 @@ switches:
                                 bank: BankRef { bank_index: 1 },
                                 sample: SampleRef { sample_index: 0 },
                             },
-                            file_resolved: test_path(&["foo1-bankB.mp3"])
+                            file_resolved: Some(test_path(&["foo1-bankB.mp3"])),
                         },
                     ],
                     bank_ref: BankRef { bank_index: 1 },
@@ -922,7 +931,7 @@ switches:
                     key_code: None
                 },
             ],
-            resolve_path: test_path(&[]),
+            resolve_path: Some(test_path(&[])),
 
             keyboard_key_to_switch_lookup_table: vec![
                 (KeyCode::X, SwitchRef { switch_index: 5 }),
@@ -977,7 +986,7 @@ switches:
   - title: No key
 "###;
 
-        let config = Config::from_string(config_source, test_path(&[])).unwrap();
+        let config = Config::from_string(config_source, Some(test_path(&[]))).unwrap();
         assert!(config.find_switch_for_keyboard_key(KeyCode::Z).is_none());
         assert_eq!(config.find_switch_for_keyboard_key(KeyCode::A).unwrap().title, "Key a (again)");
         assert_eq!(config.find_switch_for_keyboard_key(KeyCode::B).unwrap().title, "Key b");
@@ -1013,7 +1022,7 @@ switches:
       deviceId: 123
       button: West
 "###;
-        let config = Config::from_string(config_source, test_path(&[])).unwrap();
+        let config = Config::from_string(config_source, Some(test_path(&[]))).unwrap();
 
         assert!(config.find_switch_for_gamepad_button(10, Button::West).is_none());
         assert_eq!(config.find_switch_for_gamepad_button(123, Button::West).unwrap().title, "West, device 123");
@@ -1030,7 +1039,7 @@ switches:
     #[test]
     fn config_with_yaml_syntax_error() {
         let config_source = "bla'[ ";
-        Config::from_string(config_source, test_path(&[])).unwrap_err();
+        Config::from_string(config_source, Some(test_path(&[]))).unwrap_err();
     }
 
     #[test]
@@ -1038,7 +1047,7 @@ switches:
         let config_source = r###"
 switches: this should be an array
 "###;
-        let error = Config::from_string(config_source, test_path(&[])).unwrap_err();
+        let error = Config::from_string(config_source, Some(test_path(&[]))).unwrap_err();
         let error_message = format!("{}", error);
         assert!(error_message.contains("invalid type: string"));
     }
@@ -1053,7 +1062,7 @@ switches:
     playRandom:
       bank: invalid
 "###;
-        let error = Config::from_string(config_source, test_path(&[])).unwrap_err();
+        let error = Config::from_string(config_source, Some(test_path(&[]))).unwrap_err();
         match error {
             ConfigError::UnknownBankId { bank } => {
                 assert_eq!(bank.as_str(), "invalid");
@@ -1079,7 +1088,7 @@ switches:
       bank: mybank
       sample: invalid
 "###;
-        let error = Config::from_string(config_source, test_path(&[])).unwrap_err();
+        let error = Config::from_string(config_source, Some(test_path(&[]))).unwrap_err();
         match error {
             ConfigError::UnknownSampleId { bank, sample } => {
                 assert_eq!(bank.as_str(), "mybank");
