@@ -21,122 +21,106 @@ banks:
 switches:
   - title: F#3
     key: Grave
-    gamepad:
-      button: South
     play:
       bank: tubular
       sample: F#3
 
   - title: A#4
     key: 1
-    gamepad:
-      button: East
     play:
       bank: tubular
       sample: A#4
 
   - title: C4
     key: 2
-    gamepad:
-      button: North
     play:
       bank: tubular
       sample: C4
 
   - title: D4
     key: 3
-    gamepad:
-      button: West
     play:
       bank: tubular
       sample: D4
 
   - title: E4
     key: 4
-    gamepad:
-      button: LeftTrigger
     play:
       bank: tubular
       sample: E4
 
   - title: F#4
     key: 4
-    gamepad:
-      button: LeftTrigger2
     play:
       bank: tubular
       sample: F#4
 
   - title: G#4
     key: 5
-    gamepad:
-      button: RightTrigger
     play:
       bank: tubular
       sample: G#4
 
   - title: A#5
     key: 6
-    gamepad:
-      button: RightTrigger2
     play:
       bank: tubular
       sample: A#5
 
   - title: C5
     key: 7
-    gamepad:
-      button: DPadUp
     play:
       bank: tubular
       sample: C5
 
   - title: D5
     key: 8
-    gamepad:
-      button: DPadDown
     play:
       bank: tubular
       sample: D5
 
   - title: E5
     key: 9
-    gamepad:
-      button: DPadLeft
     play:
       bank: tubular
       sample: E5
 
   - title: E6
     key: 0
-    gamepad:
-      button: DPadRight
     play:
       bank: tubular
       sample: E6
 
   - title: Random
-    key: 'Q'
+    key: Left
     gamepad:
-      button: Start
+      button: West
     playRandom:
       bank: tubular
 
   - title: Previous
-    key: 'Up'
+    key: Up
     gamepad:
-      button: LeftThumb
+      button: North
     playStep:
       bank: tubular
       steps: -1
 
   - title: Next
-    key: 'Down'
+    key: Down
     gamepad:
-      button: RightThumb
+      button: South
     playStep:
       bank: tubular
       steps: 1
+
+  - title: Repeat
+    key: Right
+    gamepad:
+      button: East
+    playStep:
+      bank: tubular
+      steps: 0
 
   - title: Silence
     key: Space
