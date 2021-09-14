@@ -38,7 +38,7 @@ pub fn embedded_config() ->  Option<&'static str> {
 
 fn build_embedded_config() {
     let out_file: PathBuf = [&out_dir(), "embedded_config.rs"].iter().collect();
-    let config_path = env::var("EMBED_CONFIG_PATH");
+    let config_path = env::var("MICROSWITCH_EMBED_CONFIG_PATH");
 
     if Err(env::VarError::NotPresent) == config_path {
         println!("DEBUG: writing empty embedded config to {}", out_file.to_str().unwrap());
@@ -46,13 +46,13 @@ fn build_embedded_config() {
         return;
     }
 
-    let config_path = config_path.expect("Invalid EMBED_CONFIG_PATH");
+    let config_path = config_path.expect("Invalid MICROSWITCH_EMBED_CONFIG_PATH");
     let config_path = PathBuf::from(config_path);
     let config_path = config_path.absolutize().unwrap().into_owned();
 
     println!("DEBUG: writing embedded config from {} to {}", config_path.to_str().unwrap(), out_file.to_str().unwrap());
 
-    let config_str = fs::read_to_string(&config_path).expect("Failed to read EMBED_CONFIG_PATH");
+    let config_str = fs::read_to_string(&config_path).expect("Failed to read MICROSWITCH_EMBED_CONFIG_PATH");
     let mut resolve_path = config_path;
     resolve_path.pop();
 
@@ -120,7 +120,7 @@ fn build_window_icon() {
 #[cfg(target_os = "windows")]
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=EMBED_CONFIG_PATH");
+    println!("cargo:rerun-if-env-changed=MICROSWITCH_EMBED_CONFIG_PATH");
 
     let package_dir = package_dir();
     let resources_dir: PathBuf = [package_dir.as_str(), "resources"].iter().collect();
@@ -130,7 +130,7 @@ fn main() {
 
     build_window_icon();
     // example:
-    //   $env:EMBED_CONFIG_PATH = 'example\config.yaml'
+    //   $env:MICROSWITCH_EMBED_CONFIG_PATH = 'example\config.yaml'
     //   cargo build -vv
     build_embedded_config();
 }
