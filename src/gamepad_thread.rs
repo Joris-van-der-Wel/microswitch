@@ -59,7 +59,7 @@ impl GamepadThreadBody {
         loop {
             while let Some(Event { id, event, time: _ }) = self.gilrs.next_event() {
                 match event {
-                    EventType::ButtonReleased(button, _code) => {
+                    EventType::ButtonPressed(button, _code) => {
                         if let Err(err) = self.handle_gamepad_button(id, button) {
                             eprintln!("Error while handling gamepad button event {:?}", err);
                         }
