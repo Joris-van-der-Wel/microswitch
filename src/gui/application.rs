@@ -1,74 +1,21 @@
-use crate::config::{Config, SwitchRef};
-use iced::{button, Button, Column, Text, Settings, Error, Element, Align, Length, Container, Application, executor, Clipboard, Command, Subscription, Background, Color, Vector};
-use iced_native::{Event, keyboard, window};
+use iced::{Alignment, Application, Command, Element, Error, Event, keyboard, Length, Settings, Subscription, Theme, theme, window};
+use iced::widget::{Column, button, Container, text};
 use iced::time::{every as iced_time_every};
-use iced::window::Icon;
-use crate::sound_thread::{SoundThread, SoundThreadRpc, SoundThreadEvent};
-use crate::gamepad_thread::{GamepadThread};
+use iced::window::icon;
 use std::time::{Duration, Instant};
 use std::sync::mpsc::Receiver;
+use crate::config::{Config, SwitchRef};
+use crate::sound_thread::{SoundThread, SoundThreadRpc, SoundThreadEvent};
+use crate::gamepad_thread::{GamepadThread};
+use crate::gui::executor::MyExecutor;
+use crate::gui::style::ButtonStyleSheet;
+use crate::gui::types::{Message, PlayButtonState};
 
 pub struct ApplicationFlags {
     config: Config,
     sound_thread: SoundThread,
     gamepad_thread: GamepadThread,
     sound_thread_event_receiver: Receiver<SoundThreadEvent>,
-}
-
-// Whenever a sample is played, the corresponding button will be highlighted temporarily.
-// These constant specify the duration and colour of this highlight.
-// Buttons that only play a random or a stepped sample, will not be highlighted.
-const BUTTON_PLAY_FEEDBACK_DURATION: u128 = 1000;
-const BUTTON_PLAY_FEEDBACK_FROM: (f32, f32, f32) = (51.0 / 255.0, 147.0 / 255.0, 129.9 / 255.0);
-const BUTTON_PLAY_FEEDBACK_TO: (f32, f32, f32) = (0.87, 0.87, 0.87);
-
-fn interpolate(from: f32, to: f32, progress: f32) -> f32 {
-    (to - from) * progress + from
-}
-
-struct ButtonStyleSheet {
-    last_played_ago: Option<Duration>,
-}
-
-impl button::StyleSheet for ButtonStyleSheet {
-    fn active(&self) -> button::Style {
-        let play_feedback_progress: f32 = match self.last_played_ago {
-            None => 1.0,
-            Some(last_played_ago) => {
-                let last_played_ago = last_played_ago.as_millis();
-                if last_played_ago >= BUTTON_PLAY_FEEDBACK_DURATION {
-                    1.0
-                }
-                else {
-                    last_played_ago as f32 / BUTTON_PLAY_FEEDBACK_DURATION as f32
-                }
-            }
-        };
-
-        let background_color= Color::from_rgb(
-            interpolate(BUTTON_PLAY_FEEDBACK_FROM.0, BUTTON_PLAY_FEEDBACK_TO.0, play_feedback_progress),
-            interpolate(BUTTON_PLAY_FEEDBACK_FROM.1, BUTTON_PLAY_FEEDBACK_TO.1, play_feedback_progress),
-            interpolate(BUTTON_PLAY_FEEDBACK_FROM.2, BUTTON_PLAY_FEEDBACK_TO.2, play_feedback_progress),
-        );
-
-        button::Style {
-            shadow_offset: Vector::new(0.0, 0.0),
-            background: Some(Background::Color(background_color)),
-            border_radius: 2.0,
-            border_width: 1.0,
-            border_color: [0.7, 0.7, 0.7].into(),
-            text_color: Color::BLACK,
-        }
-    }
-}
-
-struct PlayButtonState {
-    switch_title: String,
-    button: button::State,
-    /// Is the keyboard key currently down? A sample should only play for a single press, without repeating.
-    key_held_down: bool,
-    /// The last time the corresponding sample (the one specified by config.switches[button_index].play.unwrap().bank_sample_ref) has been played.
-    last_played_at: Option<Instant>,
 }
 
 pub struct MyApplication {
@@ -81,22 +28,10 @@ pub struct MyApplication {
     /// correspondence with a button, at the same index.
     play_buttons: Vec<PlayButtonState>,
     now: Instant,
-    should_exit: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    Tick(Instant),
-    EventOccurred(Event),
-    PlayButtonPressed(usize), // (index)
 }
 
 impl MyApplication {
-    fn exit(&mut self) {
-        if self.should_exit {
-            return;
-        }
-
+    fn before_close(&mut self) {
         let sound_thread = self.sound_thread.take().unwrap();
         let gamepad_thread = self.gamepad_thread.take().unwrap();
 
@@ -106,8 +41,6 @@ impl MyApplication {
         if let Err(err) = gamepad_thread.stop() {
             eprintln!("Error while stopping GamepadThread: {:?}", err);
         }
-
-        self.should_exit = true;
     }
 
     fn switch_pressed(&self, switch_ref: SwitchRef) {
@@ -118,8 +51,9 @@ impl MyApplication {
 }
 
 impl Application for MyApplication {
-    type Executor = executor::Default;
+    type Executor = MyExecutor;
     type Message = Message;
+    type Theme = Theme;
     type Flags = ApplicationFlags;
 
     fn new(flags: ApplicationFlags) -> (MyApplication, Command<Self::Message>) {
@@ -134,7 +68,6 @@ impl Application for MyApplication {
             .into_iter()
             .map(|switch_config| PlayButtonState {
                 switch_title: switch_config.title.clone(),
-                button: button::State::new(),
                 key_held_down: false,
                 last_played_at: None,
             })
@@ -148,7 +81,6 @@ impl Application for MyApplication {
             sound_thread_event_receiver,
             now: Instant::now(),
             play_buttons,
-            should_exit: false,
         };
 
         (app, Command::none())
@@ -158,7 +90,7 @@ impl Application for MyApplication {
         String::from(concat!("μSwitch ", env!("CARGO_PKG_VERSION")))
     }
 
-    fn update(&mut self, message: Message, _clipboard: &mut Clipboard) -> Command<Self::Message>{
+    fn update(&mut self, message: Message) -> Command<Self::Message>{
         match message {
             Message::Tick(now) => {
                 self.now = now;
@@ -183,7 +115,9 @@ impl Application for MyApplication {
                 self.switch_pressed(switch_ref);
             },
             Message::EventOccurred(Event::Window(window::Event::CloseRequested)) => {
-                self.exit();
+                println!("Close requested");
+                self.before_close();
+                return window::close();
             },
             Message::EventOccurred(Event::Keyboard(keyboard::Event::KeyPressed { key_code, modifiers: _ })) => {
                 if let Some(switch_config) = self.config.find_switch_for_keyboard_key(key_code) {
@@ -213,28 +147,28 @@ impl Application for MyApplication {
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            iced_native::subscription::events().map(Message::EventOccurred),
+            iced::subscription::events().map(Message::EventOccurred),
             iced_time_every(Duration::from_millis(8)).map(|_| Message::Tick(Instant::now())),
         ])
     }
 
-    fn view(&mut self) -> Element<Message> {
+    fn view(&self) -> Element<Message> {
         let now = self.now;
-        let play_buttons = self.play_buttons.iter_mut();
+        let play_buttons = self.play_buttons.iter();
 
         let mut column = Column::new()
             .padding(20)
-            .align_items(Align::Center);
+            .align_items(Alignment::Center);
 
         let mut index = 0;
         for play_button in play_buttons {
-            let stylesheet = ButtonStyleSheet {
+            let stylesheet = Box::new(ButtonStyleSheet {
                 last_played_ago: play_button.last_played_at.map(|ago| now.duration_since(ago)),
-            };
+            });
 
-            let button = Button::new(&mut play_button.button, Text::new(&play_button.switch_title))
+            let button = button(text(&play_button.switch_title))
                 .width(Length::Fill)
-                .style(stylesheet)
+                .style(theme::Button::Custom(stylesheet))
                 .on_press(Message::PlayButtonPressed(index));
 
             column = column.push(
@@ -246,16 +180,12 @@ impl Application for MyApplication {
 
         column.into()
     }
-
-    fn should_exit(&self) -> bool {
-        self.should_exit
-    }
 }
 
-fn make_icon() -> Icon {
+fn make_icon() -> icon::Icon {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/microswitch-icon-32-rgba"));
     let bytes = bytes.to_vec();
-    Icon::from_rgba(bytes, 32, 32).expect("Failed to load window icon")
+    icon::from_rgba(bytes, 32, 32).expect("Failed to load window icon")
 }
 
 pub fn run_application(
@@ -268,7 +198,7 @@ pub fn run_application(
     let flags = ApplicationFlags { config, sound_thread, gamepad_thread, sound_thread_event_receiver };
     let mut settings = Settings::with_flags(flags);
 
-    // this we will handle ourselves so that we can do cleanup
+    // this we will handle ourselves so that we can do cleanup (Event::CloseRequested)
     settings.exit_on_close_request = false;
 
     settings.window.icon = Some(make_icon());

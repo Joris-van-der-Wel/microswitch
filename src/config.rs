@@ -5,7 +5,7 @@ use serde::{Deserialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use std::{fs, array};
+use std::{fs};
 
 const KEYBOARD_BUTTON_MAPPING: [(&str, KeyCode); 136] = [
     ("1", KeyCode::Key1),
@@ -173,7 +173,7 @@ fn make_keyboard_button_map() -> HashMap<&'static str, KeyCode> {
 }
 
 fn make_valid_keyboard_button_vec() -> Vec<&'static str>{
-    array::IntoIter::new(KEYBOARD_BUTTON_MAPPING)
+    KEYBOARD_BUTTON_MAPPING.iter()
         .map(|x| x.0)
         .collect()
 }
@@ -183,7 +183,7 @@ fn make_gamepad_button_map() -> HashMap<&'static str, Button> {
 }
 
 fn make_valid_gamepad_button_vec() -> Vec<&'static str>{
-    array::IntoIter::new(GAMEPAD_BUTTON_MAPPING)
+    GAMEPAD_BUTTON_MAPPING.iter()
         .map(|x| x.0)
         .collect()
 }

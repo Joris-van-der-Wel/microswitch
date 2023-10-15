@@ -14,7 +14,7 @@ enum LoadedSampleSource {
     Embedded(Buffered<SamplesConverter<Decoder<Cursor<&'static [u8]>>, f32>>),
 }
 
-fn decode<T: Read + Seek + Send>(data: T) -> Result<Buffered<SamplesConverter<Decoder<T>, f32>>, SampleLoadError> {
+fn decode<T: Read + Seek + Send + Sync + 'static>(data: T) -> Result<Buffered<SamplesConverter<Decoder<T>, f32>>, SampleLoadError> {
     let source = match Decoder::new(data) {
         Ok(v) => v,
         Err(err) => {
