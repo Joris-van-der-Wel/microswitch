@@ -1,6 +1,6 @@
 [package]
 name = "microswitch"
-version = "2.0.0"
+version = "3.0.0"
 authors = ["Joris van der Wel <joris@jorisvanderwel.com>"]
 description = "μSwitch is a cross-platform application which enables musicians to play sounds using switches. It's designed for people with disabilities to help them practise playing music and to perform in a concert."
 license = "MIT"
